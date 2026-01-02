@@ -428,16 +428,18 @@ export const renameFragment = async (fragmentId, newName) => {
 // TAKES (Video recordings)
 // ============================================
 
-export const saveTake = async (videoBlob, mimeType, trackId, fragmentId = null, duration = null) => {
+export const saveTake = async (videoBlob, mimeType, trackId = null, fragmentId = null, duration = null, isIncognito = false, name = null) => {
   const db = await initDB();
   const take = {
     id: generateId(),
-    trackId,
+    trackId, // può essere null per take incognito
     fragmentId, // può essere null per take direttamente sotto il brano
     videoBlob,
     mimeType,
     createdAt: Date.now(),
     duration, // durata in secondi
+    isIncognito, // flag per take registrati in modalità incognito
+    name, // nome opzionale del take
   };
 
   return new Promise((resolve, reject) => {
@@ -510,6 +512,132 @@ export const renameTake = async (takeId, newName) => {
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+};
+
+// Assegna un brano a un take esistente (utile per taggare registrazioni incognito)
+export const assignTrackToTake = async (takeId, trackId, fragmentId = null) => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('takes', 'readwrite');
+    const store = tx.objectStore('takes');
+    const request = store.get(takeId);
+    request.onsuccess = () => {
+      const take = request.result;
+      if (take) {
+        take.trackId = trackId;
+        take.fragmentId = fragmentId;
+        // Mantiene isIncognito invariato - il take resta contrassegnato come incognito
+        store.put(take);
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+// Ottieni tutti i take ordinati per data (più recenti prima) con dettagli sessione
+export const getAllTakesWithDetails = async (limit = 50, offset = 0) => {
+  const db = await initDB();
+
+  // Carica tutti i dati di riferimento
+  const allAuthors = await getAllAuthors();
+  const allOperas = await getAllOperas();
+  const allTracks = await getAllTracks();
+  const allFragments = await getAllFragments();
+
+  // Crea mappe per lookup veloce
+  const authorsMap = new Map(allAuthors.map(a => [a.id, a]));
+  const operasMap = new Map(allOperas.map(o => [o.id, o]));
+  const tracksMap = new Map(allTracks.map(t => [t.id, t]));
+  const fragmentsMap = new Map(allFragments.map(f => [f.id, f]));
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('takes', 'readonly');
+    const store = tx.objectStore('takes');
+    const index = store.index('createdAt');
+    const results = [];
+    let skipped = 0;
+    let collected = 0;
+
+    const request = index.openCursor(null, 'prev'); // Più recenti prima
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor && collected < limit) {
+        if (skipped >= offset) {
+          const take = cursor.value;
+
+          // Costruisci i dettagli della sessione
+          let sessionDetails = {
+            trackId: null,
+            trackName: null,
+            fragmentId: null,
+            fragmentName: null,
+            operaId: null,
+            operaName: null,
+            authorId: null,
+            authorName: null,
+          };
+
+          if (take.trackId) {
+            const track = tracksMap.get(take.trackId);
+            if (track) {
+              sessionDetails.trackId = track.id;
+              sessionDetails.trackName = track.name;
+
+              if (track.operaId) {
+                const opera = operasMap.get(track.operaId);
+                if (opera) {
+                  sessionDetails.operaId = opera.id;
+                  sessionDetails.operaName = opera.name;
+
+                  if (opera.authorId) {
+                    const author = authorsMap.get(opera.authorId);
+                    if (author) {
+                      sessionDetails.authorId = author.id;
+                      sessionDetails.authorName = author.name;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          if (take.fragmentId) {
+            const fragment = fragmentsMap.get(take.fragmentId);
+            if (fragment) {
+              sessionDetails.fragmentId = fragment.id;
+              sessionDetails.fragmentName = fragment.name;
+            }
+          }
+
+          results.push({
+            ...take,
+            sessionDetails,
+          });
+          collected++;
+        } else {
+          skipped++;
+        }
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+};
+
+// Conta tutti i take
+export const getTotalTakesCount = async () => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('takes', 'readonly');
+    const store = tx.objectStore('takes');
+    const request = store.count();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 };
 

@@ -1,52 +1,6 @@
 import React from 'react';
-import { FolderOpen, RefreshCw, ChevronDown, ChevronRight, Edit3, Trash2, User, BookOpen, Music, Check, X, Play } from 'lucide-react';
-
-// Formatta timestamp in formato leggibile
-const formatTime = (timestamp) => {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-
-  if (isToday) {
-    return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  }
-  return date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
-};
-
-// Formatta durata in M:SS
-const formatTakeDuration = (seconds) => {
-  if (!seconds || seconds <= 0) return '';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
-
-// Conta takes ricorsivamente
-const countTotalTakes = (item) => {
-  if (item.takes) return item.takes.length;
-  if (item.fragments) {
-    let count = item.orphanTakes?.length || 0;
-    for (const fragment of item.fragments) {
-      count += fragment.takes?.length || 0;
-    }
-    return count;
-  }
-  if (item.tracks) {
-    let count = 0;
-    for (const track of item.tracks) {
-      count += countTotalTakes(track);
-    }
-    return count;
-  }
-  if (item.operas) {
-    let count = 0;
-    for (const opera of item.operas) {
-      count += countTotalTakes(opera);
-    }
-    return count;
-  }
-  return 0;
-};
+import { FolderOpen, RefreshCw, ChevronDown, ChevronRight, Edit3, Trash2, User, BookOpen, Music, Check, X, Play, CheckCircle } from 'lucide-react';
+import { formatTime, formatTakeDuration, countTotalTakes } from '../../utils/formatters';
 
 // Componente per i Take (riutilizzabile)
 function TakeRow({
@@ -157,9 +111,9 @@ function FragmentItem({
             <button
               onClick={() => selectFragmentAsSession(fragment, track, opera, author)}
               className="p-1 text-blue-400 active:text-blue-300"
-              title="Usa come sessione"
+              title="Seleziona questo brano"
             >
-              <Music className="w-3 h-3" />
+              <CheckCircle className="w-3 h-3" />
             </button>
             <button
               onClick={() => startEditing('fragment', fragment.id, fragment.name)}

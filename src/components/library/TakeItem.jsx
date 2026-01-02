@@ -1,25 +1,6 @@
 import React from 'react';
 import { Play } from 'lucide-react';
-
-// Formatta timestamp in formato leggibile
-const formatTime = (timestamp) => {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-
-  if (isToday) {
-    return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  }
-  return date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
-};
-
-// Formatta durata in M:SS
-const formatTakeDuration = (seconds) => {
-  if (!seconds || seconds <= 0) return '';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
+import { formatTime, formatTakeDuration } from '../../utils/formatters';
 
 export function TakeItem({
   take,

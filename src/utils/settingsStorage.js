@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS = {
   rightPedalKey: 'ArrowRight',
   audioFeedbackEnabled: true,
   videoQuality: '1080p', // '720p' | '1080p' | '4k'
-  theme: 'dark', // 'dark' | 'light'
+  theme: 'dark', // 'dark' | 'light' | 'incognito'
 };
 
 export const VIDEO_QUALITY_OPTIONS = {

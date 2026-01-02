@@ -1,11 +1,12 @@
 import React from 'react';
-import { X, Share2, Trash2, Mic } from 'lucide-react';
+import { X, Share2, Trash2, Mic, Tag } from 'lucide-react';
 
 export function TakePlayerModal({
   playingTake,
   onClose,
   onShare,
   onDelete,
+  onTag,
 }) {
   if (!playingTake) return null;
 
@@ -15,15 +16,23 @@ export function TakePlayerModal({
       onClick={onClose}
     >
       {/* Header con info e pulsante chiudi */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent p-4">
+      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-white font-medium">Take {playingTake.index + 1}</p>
-            <p className="text-gray-400 text-sm">{playingTake.fragmentName}</p>
+            <p className="text-white font-medium text-lg">
+              {playingTake.isIncognito
+                ? 'Registrazione incognito'
+                : playingTake.index !== undefined
+                  ? `Take ${playingTake.index + 1}`
+                  : 'Take'}
+            </p>
+            <p className="text-gray-400 text-sm">
+              {playingTake.fragmentName || playingTake.sessionDetails?.trackName || ''}
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm"
+            className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm"
           >
             <X className="w-6 h-6 text-white" />
           </button>
@@ -58,24 +67,35 @@ export function TakePlayerModal({
       </div>
 
       {/* Footer con azioni */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4 pb-8">
+      <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4 pb-[max(2rem,calc(env(safe-area-inset-bottom)+1rem))]">
         <div className="flex items-center justify-center gap-4" onClick={(e) => e.stopPropagation()}>
+          {/* Tag/Cambia brano */}
+          {onTag && (
+            <button
+              onClick={onTag}
+              className="flex flex-col items-center gap-2 px-6 py-4 rounded-2xl bg-orange-600 active:bg-orange-500"
+            >
+              <Tag className="w-7 h-7 text-white" />
+              <span className="text-white text-sm font-medium">Brano</span>
+            </button>
+          )}
+
           {/* Condividi */}
           <button
             onClick={onShare}
-            className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-purple-600 active:bg-purple-500"
+            className="flex flex-col items-center gap-2 px-6 py-4 rounded-2xl bg-purple-600 active:bg-purple-500"
           >
-            <Share2 className="w-6 h-6 text-white" />
-            <span className="text-white text-sm">Condividi</span>
+            <Share2 className="w-7 h-7 text-white" />
+            <span className="text-white text-sm font-medium">Condividi</span>
           </button>
 
           {/* Elimina */}
           <button
             onClick={onDelete}
-            className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-red-600 active:bg-red-500"
+            className="flex flex-col items-center gap-2 px-6 py-4 rounded-2xl bg-red-600 active:bg-red-500"
           >
-            <Trash2 className="w-6 h-6 text-white" />
-            <span className="text-white text-sm">Elimina</span>
+            <Trash2 className="w-7 h-7 text-white" />
+            <span className="text-white text-sm font-medium">Elimina</span>
           </button>
         </div>
       </div>
