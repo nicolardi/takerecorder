@@ -1,12 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Video, Circle, Square, Play, RotateCcw, AlertCircle, Keyboard, Gamepad2, Settings, X, Share2, Volume2, FolderOpen, Music, Trash2, ChevronRight, ChevronDown, Edit3, Plus, Check, BookOpen, HelpCircle, User, FileText, Mic, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Video, Circle, Square, Play, RotateCcw, AlertCircle, Keyboard, Gamepad2, Settings, X, Share2, Volume2, FolderOpen, Music, Trash2, ChevronRight, ChevronDown, Edit3, Plus, Check, BookOpen, HelpCircle, User, FileText, Mic, ArrowLeft } from 'lucide-react';
 import { BottomTabBar } from './components/BottomTabBar';
 import { SessionsTab } from './components/tabs/SessionsTab';
 import { StatisticsTab } from './components/tabs/StatisticsTab';
+import { SettingsTab } from './components/tabs/SettingsTab';
+import { LibraryTab } from './components/tabs/LibraryTab';
+import { TakePlayerModal } from './components/modals/TakePlayerModal';
 import { useSettings } from './hooks/useSettings';
 import { useRecordingTimer } from './hooks/useRecordingTimer';
 import { useMultipleCameras } from './hooks/useMultipleCameras';
-import { VIDEO_QUALITY_OPTIONS } from './utils/settingsStorage';
 import {
   initDB,
   createAuthor,
@@ -550,17 +552,6 @@ export default function VideoRecorderApp() {
     }
   }, [currentSession, loadLibrary]);
 
-  // Elimina take
-  const handleDeleteTake = useCallback(async (takeId) => {
-    try {
-      await deleteTake(takeId);
-      setTakeCount(prev => Math.max(0, prev - 1));
-      await loadLibrary();
-    } catch (err) {
-      console.error('Errore eliminazione take:', err);
-    }
-  }, [loadLibrary]);
-
   // Inizia rinomina
   const startEditing = useCallback((type, id, currentName) => {
     setEditingItem({ type, id });
@@ -629,7 +620,14 @@ export default function VideoRecorderApp() {
   // Play take dalla libreria
   const playTakeFromLibrary = useCallback((take, index, fragmentName) => {
     const url = URL.createObjectURL(take.videoBlob);
-    setPlayingTake({ url, mimeType: take.mimeType, index, fragmentName });
+    setPlayingTake({
+      url,
+      mimeType: take.mimeType,
+      index,
+      fragmentName,
+      id: take.id,
+      videoBlob: take.videoBlob  // Per condivisione
+    });
   }, []);
 
   // Chiudi player take
@@ -640,37 +638,50 @@ export default function VideoRecorderApp() {
     setPlayingTake(null);
   }, [playingTake]);
 
-  // Condividi take dalla libreria
-  const shareTakeFromLibrary = useCallback(async (take, takeName) => {
+  // Condividi take dal player modale
+  const sharePlayingTake = useCallback(async () => {
+    if (!playingTake) return;
     try {
-      const isVideo = take.mimeType?.startsWith('video');
+      const isVideo = playingTake.mimeType?.startsWith('video');
       const extension = isVideo ? 'webm' : 'webm';
-      const fileName = `${takeName || 'take'}.${extension}`;
+      const fileName = `${playingTake.fragmentName || 'take'}_${playingTake.index + 1}.${extension}`;
 
-      const file = new File([take.videoBlob], fileName, { type: take.mimeType });
+      const file = new File([playingTake.videoBlob], fileName, { type: playingTake.mimeType });
 
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: takeName || 'Take',
+          title: fileName,
         });
       } else {
         // Fallback: download
-        const url = URL.createObjectURL(take.videoBlob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = playingTake.url;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Errore condivisione:', err);
       }
     }
-  }, []);
+  }, [playingTake]);
+
+  // Elimina take dal player modale
+  const deletePlayingTake = useCallback(async () => {
+    if (!playingTake?.id) return;
+    if (!confirm('Eliminare questo take?')) return;
+
+    try {
+      await deleteTake(playingTake.id);
+      closePlayingTake();
+      loadLibrary();
+    } catch (err) {
+      console.error('Errore eliminazione take:', err);
+    }
+  }, [playingTake, closePlayingTake, loadLibrary]);
 
   // ============================================
   // MEDIA INITIALIZATION (Audio or Video+Audio)
@@ -928,7 +939,7 @@ export default function VideoRecorderApp() {
   // Reinizializza quando cambia la modalità video/audio
   useEffect(() => {
     if (isInitialized && !isRecording && !recordedVideo) {
-      initMedia(facingMode, orientation, false, videoEnabled);
+      initMedia(facingMode, orientation, fconalse, videoEnabled);
     }
   }, [videoEnabled]);
 
@@ -2429,37 +2440,15 @@ export default function VideoRecorderApp() {
                                                           </button>
                                                         </div>
                                                       ) : (
-                                                        <>
-                                                          <button
-                                                            onClick={() => playTakeFromLibrary(take, index, fragment.name)}
-                                                            className="flex items-center gap-2"
-                                                          >
-                                                            <Play className="w-4 h-4 text-white" />
-                                                            <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                                            {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                                            <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                                          </button>
-                                                          <div className="flex items-center gap-1">
-                                                            <button
-                                                              onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                                              className="p-3 text-blue-400 active:text-blue-300"
-                                                            >
-                                                              <Edit3 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                              onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                                              className="p-3 text-purple-400 active:text-purple-300"
-                                                            >
-                                                              <Share2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                              onClick={() => handleDeleteTake(take.id)}
-                                                              className="p-3 text-red-400 active:text-red-300"
-                                                            >
-                                                              <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                          </div>
-                                                        </>
+                                                        <button
+                                                          onClick={() => playTakeFromLibrary(take, index, fragment.name)}
+                                                          className="flex-1 flex items-center gap-2"
+                                                        >
+                                                          <Play className="w-4 h-4 text-white" />
+                                                          <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
+                                                          {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
+                                                          <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
+                                                        </button>
                                                       )}
                                                     </div>
                                                   ))}
@@ -2685,37 +2674,15 @@ export default function VideoRecorderApp() {
                                                   </button>
                                                 </div>
                                               ) : (
-                                                <>
-                                                  <button
-                                                    onClick={() => playTakeFromLibrary(take, index, fragment.name)}
-                                                    className="flex items-center gap-2"
-                                                  >
-                                                    <Play className="w-4 h-4 text-white" />
-                                                    <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                                    {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                                    <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                                  </button>
-                                                  <div className="flex items-center gap-1">
-                                                    <button
-                                                      onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                                      className="p-3 text-blue-400 active:text-blue-300"
-                                                    >
-                                                      <Edit3 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                                      className="p-3 text-purple-400 active:text-purple-300"
-                                                    >
-                                                      <Share2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => handleDeleteTake(take.id)}
-                                                      className="p-3 text-red-400 active:text-red-300"
-                                                    >
-                                                      <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                  </div>
-                                                </>
+                                                <button
+                                                  onClick={() => playTakeFromLibrary(take, index, fragment.name)}
+                                                  className="flex-1 flex items-center gap-2"
+                                                >
+                                                  <Play className="w-4 h-4 text-white" />
+                                                  <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
+                                                  {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
+                                                  <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
+                                                </button>
                                               )}
                                             </div>
                                           ))}
@@ -2880,37 +2847,15 @@ export default function VideoRecorderApp() {
                                           </button>
                                         </div>
                                       ) : (
-                                        <>
-                                          <button
-                                            onClick={() => playTakeFromLibrary(take, index, fragment.name)}
-                                            className="flex items-center gap-2"
-                                          >
-                                            <Play className="w-4 h-4 text-white" />
-                                            <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                            {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                            <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                          </button>
-                                          <div className="flex items-center gap-1">
-                                            <button
-                                              onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                              className="p-3 text-blue-400 active:text-blue-300"
-                                            >
-                                              <Edit3 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                              className="p-3 text-purple-400 active:text-purple-300"
-                                            >
-                                              <Share2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeleteTake(take.id)}
-                                              className="p-3 text-red-400 active:text-red-300"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </button>
-                                          </div>
-                                        </>
+                                        <button
+                                          onClick={() => playTakeFromLibrary(take, index, fragment.name)}
+                                          className="flex-1 flex items-center gap-2"
+                                        >
+                                          <Play className="w-4 h-4 text-white" />
+                                          <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
+                                          {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
+                                          <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
+                                        </button>
                                       )}
                                     </div>
                                   ))}
@@ -2939,61 +2884,13 @@ export default function VideoRecorderApp() {
         </div>
       )}
 
-      {/* Modale Player Take - fullscreen con loop */}
-      {playingTake && (
-        <div
-          className="fixed inset-0 z-[100] bg-black flex flex-col"
-          onClick={closePlayingTake}
-        >la sini
-          {/* Header con info e pulsante chiudi */}
-          <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Take {playingTake.index + 1}</p>
-                <p className="text-gray-400 text-sm">{playingTake.fragmentName}</p>
-              </div>
-              <button
-                onClick={closePlayingTake}
-                className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm"
-              >
-                <X className="w-6 h-6 text-white" />
-              </button>
-            </div>
-          </div>
-
-          {/* Player video/audio */}
-          <div className="flex-1 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            {playingTake.mimeType?.startsWith('video') ? (
-              <video
-                src={playingTake.url}
-                autoPlay
-                loop
-                playsInline
-                controls
-                className="max-w-full max-h-full object-contain"
-              />
-            ) : (
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-32 h-32 rounded-full bg-purple-600/30 flex items-center justify-center">
-                  <Mic className="w-16 h-16 text-purple-400" />
-                </div>
-                <audio
-                  src={playingTake.url}
-                  autoPlay
-                  loop
-                  controls
-                  className="w-80"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Footer con hint */}
-          <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4">
-            <p className="text-gray-400 text-center text-sm">Tocca fuori dal player per chiudere</p>
-          </div>
-        </div>
-      )}
+      {/* Modale Player Take */}
+      <TakePlayerModal
+        playingTake={playingTake}
+        onClose={closePlayingTake}
+        onShare={sharePlayingTake}
+        onDelete={deletePlayingTake}
+      />
 
       {/* Media Area - Full screen, responsive to rotation - nascosto quando non nel tab Registra */}
       <div ref={videoContainerRef} className={`absolute inset-0 flex items-center justify-center bg-black touch-none ${activeTab !== 'registra' ? 'hidden' : ''}`}>
@@ -3120,990 +3017,33 @@ export default function VideoRecorderApp() {
           </>
         )}
 
-        {/* Tab Libreria - mostra l'albero completo della libreria */}
+        {/* Tab Libreria */}
         {activeTab === 'libreria' && (
-          <div className={`h-full overflow-y-auto p-4 pb-20 ${isDark ? 'bg-gray-950' : 'bg-white'}`}>
-            <div className="flex items-center gap-2 mb-4">
-              <FolderOpen className="w-5 h-5 text-purple-400" />
-              <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Libreria</h2>
-              <span className="text-gray-500 text-xs">({library.length} elementi)</span>
-              <button
-                onClick={loadLibrary}
-                className="ml-auto p-2 text-gray-400 hover:text-white"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Lista libreria - Autore > Opera > Brano > Frammento > Takes */}
-            <div className="space-y-2">
-              {library.length === 0 ? (
-                <div className="text-center py-8">
-                  <FolderOpen className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-400">Libreria vuota</p>
-                  <p className="text-gray-600 text-sm mt-1">Registra e salva qualcosa per vederlo qui</p>
-                  <button
-                    onClick={loadLibrary}
-                    className="mt-3 text-purple-400 text-xs underline"
-                  >
-                    Ricarica libreria
-                  </button>
-                </div>
-              ) : (
-                library.map((item) => (
-                  item.type === 'author' ? (
-                    // AUTORE - Livello più alto (cyan)
-                    <div key={item.id} className="bg-cyan-900/30 border border-cyan-700/50 rounded-lg overflow-hidden">
-                      <div className="flex items-center justify-between p-3">
-                        {editingItem?.type === 'author' && editingItem?.id === item.id ? (
-                          <div className="flex-1 flex items-center gap-2">
-                            <User className="w-4 h-4 text-cyan-400" />
-                            <input
-                              type="text"
-                              value={editingName}
-                              onChange={(e) => setEditingName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveEditing();
-                                if (e.key === 'Escape') cancelEditing();
-                              }}
-                              className="flex-1 bg-cyan-800/50 text-cyan-100 text-sm px-2 py-1 rounded border border-cyan-500 outline-none"
-                              autoFocus
-                            />
-                            <button onClick={saveEditing} className="p-1 text-green-400 active:text-green-300">
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button onClick={cancelEditing} className="p-1 text-gray-400 active:text-gray-300">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => toggleAuthor(item.id)}
-                              className="flex-1 flex items-center gap-2"
-                            >
-                              {expandedAuthors[item.id] ? (
-                                <ChevronDown className="w-4 h-4 text-cyan-400" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              )}
-                              <User className="w-4 h-4 text-cyan-400" />
-                              <span className="text-cyan-100 text-sm font-medium">{item.name}</span>
-                              <span className="text-cyan-500/60 text-xs">({countTotalTakes(item)} take)</span>
-                            </button>
-                            <button
-                              onClick={() => startEditing('author', item.id, item.name)}
-                              className="p-3 text-cyan-400 active:text-cyan-300"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAuthor(item.id)}
-                              className="p-3 text-red-400 active:text-red-300"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      {expandedAuthors[item.id] && (
-                        <div className="px-3 pb-3 space-y-2">
-                          {item.operas?.map((opera) => (
-                            <div key={opera.id} className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg overflow-hidden">
-                              <div className="flex items-center justify-between p-2">
-                                {editingItem?.type === 'opera' && editingItem?.id === opera.id ? (
-                                  <div className="flex-1 flex items-center gap-2">
-                                    <BookOpen className="w-4 h-4 text-yellow-400" />
-                                    <input
-                                      type="text"
-                                      value={editingName}
-                                      onChange={(e) => setEditingName(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') saveEditing();
-                                        if (e.key === 'Escape') cancelEditing();
-                                      }}
-                                      className="flex-1 bg-yellow-800/50 text-yellow-100 text-sm px-2 py-1 rounded border border-yellow-500 outline-none"
-                                      autoFocus
-                                    />
-                                    <button onClick={saveEditing} className="p-1 text-green-400 active:text-green-300">
-                                      <Check className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={cancelEditing} className="p-1 text-gray-400 active:text-gray-300">
-                                      <X className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => toggleOpera(opera.id)}
-                                      className="flex-1 flex items-center gap-2"
-                                    >
-                                      {expandedOperas[opera.id] ? (
-                                        <ChevronDown className="w-3 h-3 text-yellow-400" />
-                                      ) : (
-                                        <ChevronRight className="w-3 h-3 text-gray-400" />
-                                      )}
-                                      <BookOpen className="w-4 h-4 text-yellow-400" />
-                                      <span className="text-yellow-100 text-sm">{opera.name}</span>
-                                      <span className="text-yellow-400/60 text-xs">({countTotalTakes(opera)} take)</span>
-                                    </button>
-                                    <button
-                                      onClick={() => startEditing('opera', opera.id, opera.name)}
-                                      className="p-2.5 text-yellow-400 active:text-yellow-300"
-                                    >
-                                      <Edit3 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteOpera(opera.id)}
-                                      className="p-2.5 text-red-400 active:text-red-300"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-
-                              {expandedOperas[opera.id] && (
-                                <div className="px-2 pb-2 space-y-1">
-                                  {opera.tracks?.map((track) => (
-                                    <div key={track.id} className="bg-purple-900/30 border border-purple-700/50 rounded-lg overflow-hidden">
-                                      <div className="flex items-center justify-between p-2">
-                                        {editingItem?.type === 'track' && editingItem?.id === track.id ? (
-                                          <div className="flex-1 flex items-center gap-2">
-                                            <FolderOpen className="w-4 h-4 text-purple-400" />
-                                            <input
-                                              type="text"
-                                              value={editingName}
-                                              onChange={(e) => setEditingName(e.target.value)}
-                                              onKeyDown={(e) => {
-                                                if (e.key === 'Enter') saveEditing();
-                                                if (e.key === 'Escape') cancelEditing();
-                                              }}
-                                              className="flex-1 bg-purple-800/50 text-white text-sm px-2 py-1 rounded border border-purple-500 outline-none"
-                                              autoFocus
-                                            />
-                                            <button onClick={saveEditing} className="p-1 text-green-400 active:text-green-300">
-                                              <Check className="w-4 h-4" />
-                                            </button>
-                                            <button onClick={cancelEditing} className="p-1 text-gray-400 active:text-gray-300">
-                                              <X className="w-4 h-4" />
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <button
-                                              onClick={() => toggleTrack(track.id)}
-                                              className="flex-1 flex items-center gap-2"
-                                            >
-                                              {expandedTracks[track.id] ? (
-                                                <ChevronDown className="w-3 h-3 text-purple-400" />
-                                              ) : (
-                                                <ChevronRight className="w-3 h-3 text-gray-400" />
-                                              )}
-                                              <FolderOpen className="w-4 h-4 text-purple-400" />
-                                              <span className="text-white text-sm">{track.name}</span>
-                                              <span className="text-gray-400 text-xs">({countTotalTakes(track)} take)</span>
-                                            </button>
-                                            <button
-                                              onClick={() => startEditing('track', track.id, track.name)}
-                                              className="p-2.5 text-purple-400 active:text-purple-300"
-                                            >
-                                              <Edit3 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeleteTrack(track.id)}
-                                              className="p-2.5 text-red-400 active:text-red-300"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-
-                                      {expandedTracks[track.id] && (
-                                        <div className="px-2 pb-2 space-y-1">
-                                          {/* Take orfani (senza fragment) */}
-                                          {track.orphanTakes?.length > 0 && (
-                                            <div className="bg-gray-700/30 rounded p-2 space-y-1">
-                                              <p className="text-gray-400 text-xs mb-1">Take diretti:</p>
-                                              {track.orphanTakes.map((take, index) => (
-                                                <div
-                                                  key={take.id}
-                                                  className="flex items-center justify-between py-1 px-1 bg-gray-600/30 rounded"
-                                                >
-                                                  {editingItem?.type === 'take' && editingItem?.id === take.id ? (
-                                                    <div className="flex-1 flex items-center gap-2">
-                                                      <input
-                                                        type="text"
-                                                        value={editingName}
-                                                        onChange={(e) => setEditingName(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                          if (e.key === 'Enter') saveEditing();
-                                                          if (e.key === 'Escape') cancelEditing();
-                                                        }}
-                                                        className="flex-1 bg-gray-500 text-white text-xs px-2 py-1 rounded border border-blue-500 outline-none"
-                                                        autoFocus
-                                                      />
-                                                      <button onClick={saveEditing} className="p-1 text-green-400">
-                                                        <Check className="w-3 h-3" />
-                                                      </button>
-                                                      <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                                        <X className="w-3 h-3" />
-                                                      </button>
-                                                    </div>
-                                                  ) : (
-                                                    <>
-                                                      <button
-                                                        onClick={() => playTakeFromLibrary(take, index, track.name)}
-                                                        className="flex items-center gap-2"
-                                                      >
-                                                        <Play className="w-4 h-4 text-white" />
-                                                        <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                                        {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                                        <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                                      </button>
-                                                      <div className="flex items-center gap-1">
-                                                        <button
-                                                          onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                                          className="p-3 text-blue-400 active:text-blue-300"
-                                                        >
-                                                          <Edit3 className="w-4 h-4" />
-                                                        </button>
-                                                        <button
-                                                          onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                                          className="p-3 text-purple-400 active:text-purple-300"
-                                                        >
-                                                          <Share2 className="w-4 h-4" />
-                                                        </button>
-                                                        <button
-                                                          onClick={() => handleDeleteTake(take.id)}
-                                                          className="p-3 text-red-400 active:text-red-300"
-                                                        >
-                                                          <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                      </div>
-                                                    </>
-                                                  )}
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-
-                                          {/* Frammenti */}
-                                          {track.fragments?.map((fragment) => (
-                                            <div key={fragment.id} className="bg-green-900/30 border border-green-700/50 rounded-lg overflow-hidden">
-                                              <div className="flex items-center justify-between p-1.5">
-                                                {editingItem?.type === 'fragment' && editingItem?.id === fragment.id ? (
-                                                  <div className="flex-1 flex items-center gap-2">
-                                                    <input
-                                                      type="text"
-                                                      value={editingName}
-                                                      onChange={(e) => setEditingName(e.target.value)}
-                                                      onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') saveEditing();
-                                                        if (e.key === 'Escape') cancelEditing();
-                                                      }}
-                                                      className="flex-1 bg-green-800/50 text-green-100 text-xs px-2 py-1 rounded border border-green-500 outline-none"
-                                                      autoFocus
-                                                    />
-                                                    <button onClick={saveEditing} className="p-1 text-green-400">
-                                                      <Check className="w-3 h-3" />
-                                                    </button>
-                                                    <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                                      <X className="w-3 h-3" />
-                                                    </button>
-                                                  </div>
-                                                ) : (
-                                                  <>
-                                                    <button
-                                                      onClick={() => toggleFragment(fragment.id)}
-                                                      className="flex-1 flex items-center gap-1"
-                                                    >
-                                                      {expandedFragments[fragment.id] ? (
-                                                        <ChevronDown className="w-3 h-3 text-green-400" />
-                                                      ) : (
-                                                        <ChevronRight className="w-3 h-3 text-gray-400" />
-                                                      )}
-                                                      <span className="text-green-200 text-xs">{fragment.name}</span>
-                                                      <span className="text-green-500/60 text-[10px]">({fragment.takes?.length || 0})</span>
-                                                    </button>
-                                                    <button
-                                                      onClick={() => selectFragmentAsSession(fragment, track, opera, item)}
-                                                      className="p-1 text-blue-400 active:text-blue-300"
-                                                      title="Usa come sessione"
-                                                    >
-                                                      <Music className="w-3 h-3" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => startEditing('fragment', fragment.id, fragment.name)}
-                                                      className="p-1 text-green-400 active:text-green-300"
-                                                    >
-                                                      <Edit3 className="w-3 h-3" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => handleDeleteFragment(fragment.id)}
-                                                      className="p-1 text-red-400 active:text-red-300"
-                                                    >
-                                                      <Trash2 className="w-3 h-3" />
-                                                    </button>
-                                                  </>
-                                                )}
-                                              </div>
-
-                                              {expandedFragments[fragment.id] && fragment.takes?.length > 0 && (
-                                                <div className="px-1.5 pb-1.5 space-y-1">
-                                                  {fragment.takes.map((take, index) => (
-                                                    <div
-                                                      key={take.id}
-                                                      className="flex items-center justify-between py-1 px-1 bg-gray-700/50 rounded"
-                                                    >
-                                                      {editingItem?.type === 'take' && editingItem?.id === take.id ? (
-                                                        <div className="flex-1 flex items-center gap-2">
-                                                          <input
-                                                            type="text"
-                                                            value={editingName}
-                                                            onChange={(e) => setEditingName(e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                              if (e.key === 'Enter') saveEditing();
-                                                              if (e.key === 'Escape') cancelEditing();
-                                                            }}
-                                                            className="flex-1 bg-gray-500 text-white text-xs px-2 py-1 rounded border border-blue-500 outline-none"
-                                                            autoFocus
-                                                          />
-                                                          <button onClick={saveEditing} className="p-1 text-green-400">
-                                                            <Check className="w-3 h-3" />
-                                                          </button>
-                                                          <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                                            <X className="w-3 h-3" />
-                                                          </button>
-                                                        </div>
-                                                      ) : (
-                                                        <>
-                                                          <button
-                                                            onClick={() => playTakeFromLibrary(take, index, fragment.name)}
-                                                            className="flex items-center gap-2"
-                                                          >
-                                                            <Play className="w-4 h-4 text-white" />
-                                                            <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                                            {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                                            <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                                          </button>
-                                                          <div className="flex items-center gap-1">
-                                                            <button
-                                                              onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                                              className="p-3 text-blue-400 active:text-blue-300"
-                                                            >
-                                                              <Edit3 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                              onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                                              className="p-3 text-purple-400 active:text-purple-300"
-                                                            >
-                                                              <Share2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                              onClick={() => handleDeleteTake(take.id)}
-                                                              className="p-3 text-red-400 active:text-red-300"
-                                                            >
-                                                              <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                          </div>
-                                                        </>
-                                                      )}
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : item.type === 'opera' ? (
-                    // OPERA STANDALONE (senza autore) - giallo
-                    <div key={item.id} className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg overflow-hidden">
-                      <div className="flex items-center justify-between p-3">
-                        {editingItem?.type === 'opera' && editingItem?.id === item.id ? (
-                          <div className="flex-1 flex items-center gap-2">
-                            <BookOpen className="w-4 h-4 text-yellow-400" />
-                            <input
-                              type="text"
-                              value={editingName}
-                              onChange={(e) => setEditingName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveEditing();
-                                if (e.key === 'Escape') cancelEditing();
-                              }}
-                              className="flex-1 bg-yellow-800/50 text-yellow-100 text-sm px-2 py-1 rounded border border-yellow-500 outline-none"
-                              autoFocus
-                            />
-                            <button onClick={saveEditing} className="p-1 text-green-400 active:text-green-300">
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button onClick={cancelEditing} className="p-1 text-gray-400 active:text-gray-300">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => toggleOpera(item.id)}
-                              className="flex-1 flex items-center gap-2"
-                            >
-                              {expandedOperas[item.id] ? (
-                                <ChevronDown className="w-4 h-4 text-yellow-400" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              )}
-                              <BookOpen className="w-4 h-4 text-yellow-400" />
-                              <span className="text-yellow-100 text-sm font-medium">{item.name}</span>
-                              <span className="text-yellow-500/60 text-xs">({countTotalTakes(item)} take)</span>
-                            </button>
-                            <button
-                              onClick={() => startEditing('opera', item.id, item.name)}
-                              className="p-3 text-yellow-400 active:text-yellow-300"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteOpera(item.id)}
-                              className="p-3 text-red-400 active:text-red-300"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      {expandedOperas[item.id] && (
-                        <div className="px-3 pb-3 space-y-2">
-                          {item.tracks?.map((track) => (
-                            <div key={track.id} className="bg-purple-900/30 border border-purple-700/50 rounded-lg overflow-hidden">
-                              <div className="flex items-center justify-between p-2">
-                                {editingItem?.type === 'track' && editingItem?.id === track.id ? (
-                                  <div className="flex-1 flex items-center gap-2">
-                                    <FolderOpen className="w-4 h-4 text-purple-400" />
-                                    <input
-                                      type="text"
-                                      value={editingName}
-                                      onChange={(e) => setEditingName(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') saveEditing();
-                                        if (e.key === 'Escape') cancelEditing();
-                                      }}
-                                      className="flex-1 bg-purple-800/50 text-white text-sm px-2 py-1 rounded border border-purple-500 outline-none"
-                                      autoFocus
-                                    />
-                                    <button onClick={saveEditing} className="p-1 text-green-400 active:text-green-300">
-                                      <Check className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={cancelEditing} className="p-1 text-gray-400 active:text-gray-300">
-                                      <X className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => toggleTrack(track.id)}
-                                      className="flex-1 flex items-center gap-2"
-                                    >
-                                      {expandedTracks[track.id] ? (
-                                        <ChevronDown className="w-3 h-3 text-purple-400" />
-                                      ) : (
-                                        <ChevronRight className="w-3 h-3 text-gray-400" />
-                                      )}
-                                      <FolderOpen className="w-4 h-4 text-purple-400" />
-                                      <span className="text-white text-sm">{track.name}</span>
-                                      <span className="text-gray-400 text-xs">({countTotalTakes(track)} take)</span>
-                                    </button>
-                                    <button
-                                      onClick={() => startEditing('track', track.id, track.name)}
-                                      className="p-2.5 text-purple-400 active:text-purple-300"
-                                    >
-                                      <Edit3 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteTrack(track.id)}
-                                      className="p-2.5 text-red-400 active:text-red-300"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-
-                              {expandedTracks[track.id] && (
-                                <div className="px-2 pb-2 space-y-1">
-                                  {/* Take orfani */}
-                                  {track.orphanTakes?.length > 0 && (
-                                    <div className="bg-gray-700/30 rounded p-2 space-y-1">
-                                      <p className="text-gray-400 text-xs mb-1">Take diretti:</p>
-                                      {track.orphanTakes.map((take, index) => (
-                                        <div
-                                          key={take.id}
-                                          className="flex items-center justify-between py-1 px-1 bg-gray-600/30 rounded"
-                                        >
-                                          {editingItem?.type === 'take' && editingItem?.id === take.id ? (
-                                            <div className="flex-1 flex items-center gap-2">
-                                              <input
-                                                type="text"
-                                                value={editingName}
-                                                onChange={(e) => setEditingName(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                  if (e.key === 'Enter') saveEditing();
-                                                  if (e.key === 'Escape') cancelEditing();
-                                                }}
-                                                className="flex-1 bg-gray-500 text-white text-xs px-2 py-1 rounded border border-blue-500 outline-none"
-                                                autoFocus
-                                              />
-                                              <button onClick={saveEditing} className="p-1 text-green-400">
-                                                <Check className="w-3 h-3" />
-                                              </button>
-                                              <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                                <X className="w-3 h-3" />
-                                              </button>
-                                            </div>
-                                          ) : (
-                                            <>
-                                              <button
-                                                onClick={() => playTakeFromLibrary(take, index, track.name)}
-                                                className="flex items-center gap-2"
-                                              >
-                                                <Play className="w-4 h-4 text-white" />
-                                                <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                                {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                                <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                              </button>
-                                              <div className="flex items-center gap-1">
-                                                <button
-                                                  onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                                  className="p-3 text-blue-400 active:text-blue-300"
-                                                >
-                                                  <Edit3 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                  onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                                  className="p-3 text-purple-400 active:text-purple-300"
-                                                >
-                                                  <Share2 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                  onClick={() => handleDeleteTake(take.id)}
-                                                  className="p-3 text-red-400 active:text-red-300"
-                                                >
-                                                  <Trash2 className="w-4 h-4" />
-                                                </button>
-                                              </div>
-                                            </>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {/* Frammenti */}
-                                  {track.fragments?.map((fragment) => (
-                                    <div key={fragment.id} className="bg-green-900/30 border border-green-700/50 rounded-lg overflow-hidden">
-                                      <div className="flex items-center justify-between p-1.5">
-                                        {editingItem?.type === 'fragment' && editingItem?.id === fragment.id ? (
-                                          <div className="flex-1 flex items-center gap-2">
-                                            <input
-                                              type="text"
-                                              value={editingName}
-                                              onChange={(e) => setEditingName(e.target.value)}
-                                              onKeyDown={(e) => {
-                                                if (e.key === 'Enter') saveEditing();
-                                                if (e.key === 'Escape') cancelEditing();
-                                              }}
-                                              className="flex-1 bg-green-800/50 text-green-100 text-xs px-2 py-1 rounded border border-green-500 outline-none"
-                                              autoFocus
-                                            />
-                                            <button onClick={saveEditing} className="p-1 text-green-400">
-                                              <Check className="w-3 h-3" />
-                                            </button>
-                                            <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                              <X className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <button
-                                              onClick={() => toggleFragment(fragment.id)}
-                                              className="flex-1 flex items-center gap-1"
-                                            >
-                                              {expandedFragments[fragment.id] ? (
-                                                <ChevronDown className="w-3 h-3 text-green-400" />
-                                              ) : (
-                                                <ChevronRight className="w-3 h-3 text-gray-400" />
-                                              )}
-                                              <span className="text-green-200 text-xs">{fragment.name}</span>
-                                              <span className="text-green-500/60 text-[10px]">({fragment.takes?.length || 0})</span>
-                                            </button>
-                                            <button
-                                              onClick={() => selectFragmentAsSession(fragment, track, item)}
-                                              className="p-1 text-blue-400 active:text-blue-300"
-                                              title="Usa come sessione"
-                                            >
-                                              <Music className="w-3 h-3" />
-                                            </button>
-                                            <button
-                                              onClick={() => startEditing('fragment', fragment.id, fragment.name)}
-                                              className="p-1 text-green-400 active:text-green-300"
-                                            >
-                                              <Edit3 className="w-3 h-3" />
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeleteFragment(fragment.id)}
-                                              className="p-1 text-red-400 active:text-red-300"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-
-                                      {expandedFragments[fragment.id] && fragment.takes?.length > 0 && (
-                                        <div className="px-1.5 pb-1.5 space-y-1">
-                                          {fragment.takes.map((take, index) => (
-                                            <div
-                                              key={take.id}
-                                              className="flex items-center justify-between py-1 px-1 bg-gray-700/50 rounded"
-                                            >
-                                              {editingItem?.type === 'take' && editingItem?.id === take.id ? (
-                                                <div className="flex-1 flex items-center gap-2">
-                                                  <input
-                                                    type="text"
-                                                    value={editingName}
-                                                    onChange={(e) => setEditingName(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                      if (e.key === 'Enter') saveEditing();
-                                                      if (e.key === 'Escape') cancelEditing();
-                                                    }}
-                                                    className="flex-1 bg-gray-500 text-white text-xs px-2 py-1 rounded border border-blue-500 outline-none"
-                                                    autoFocus
-                                                  />
-                                                  <button onClick={saveEditing} className="p-1 text-green-400">
-                                                    <Check className="w-3 h-3" />
-                                                  </button>
-                                                  <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                                    <X className="w-3 h-3" />
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <>
-                                                  <button
-                                                    onClick={() => playTakeFromLibrary(take, index, fragment.name)}
-                                                    className="flex items-center gap-2"
-                                                  >
-                                                    <Play className="w-4 h-4 text-white" />
-                                                    <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                                    {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                                    <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                                  </button>
-                                                  <div className="flex items-center gap-1">
-                                                    <button
-                                                      onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                                      className="p-3 text-blue-400 active:text-blue-300"
-                                                    >
-                                                      <Edit3 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                                      className="p-3 text-purple-400 active:text-purple-300"
-                                                    >
-                                                      <Share2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => handleDeleteTake(take.id)}
-                                                      className="p-3 text-red-400 active:text-red-300"
-                                                    >
-                                                      <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                  </div>
-                                                </>
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    // BRANO STANDALONE (senza autore né opera) - viola
-                    <div key={item.id} className="bg-purple-900/30 border border-purple-700/50 rounded-lg overflow-hidden">
-                      <div className="flex items-center justify-between p-3">
-                        {editingItem?.type === 'track' && editingItem?.id === item.id ? (
-                          <div className="flex-1 flex items-center gap-2">
-                            <FolderOpen className="w-4 h-4 text-purple-400" />
-                            <input
-                              type="text"
-                              value={editingName}
-                              onChange={(e) => setEditingName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveEditing();
-                                if (e.key === 'Escape') cancelEditing();
-                              }}
-                              className="flex-1 bg-purple-800/50 text-white text-sm px-2 py-1 rounded border border-purple-500 outline-none"
-                              autoFocus
-                            />
-                            <button onClick={saveEditing} className="p-1 text-green-400 active:text-green-300">
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button onClick={cancelEditing} className="p-1 text-gray-400 active:text-gray-300">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => toggleTrack(item.id)}
-                              className="flex-1 flex items-center gap-2"
-                            >
-                              {expandedTracks[item.id] ? (
-                                <ChevronDown className="w-4 h-4 text-purple-400" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              )}
-                              <FolderOpen className="w-4 h-4 text-purple-400" />
-                              <span className="text-white text-sm font-medium">{item.name}</span>
-                              <span className="text-gray-400 text-xs">({countTotalTakes(item)} take)</span>
-                            </button>
-                            <button
-                              onClick={() => startEditing('track', item.id, item.name)}
-                              className="p-3 text-purple-400 active:text-purple-300"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTrack(item.id)}
-                              className="p-3 text-red-400 active:text-red-300"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      {expandedTracks[item.id] && (
-                        <div className="px-3 pb-3 space-y-1">
-                          {/* Take orfani */}
-                          {item.orphanTakes?.length > 0 && (
-                            <div className="bg-gray-700/30 rounded p-2 space-y-1">
-                              <p className="text-gray-400 text-xs mb-1">Take diretti:</p>
-                              {item.orphanTakes.map((take, index) => (
-                                <div
-                                  key={take.id}
-                                  className="flex items-center justify-between py-1 px-1 bg-gray-600/30 rounded"
-                                >
-                                  {editingItem?.type === 'take' && editingItem?.id === take.id ? (
-                                    <div className="flex-1 flex items-center gap-2">
-                                      <input
-                                        type="text"
-                                        value={editingName}
-                                        onChange={(e) => setEditingName(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') saveEditing();
-                                          if (e.key === 'Escape') cancelEditing();
-                                        }}
-                                        className="flex-1 bg-gray-500 text-white text-xs px-2 py-1 rounded border border-blue-500 outline-none"
-                                        autoFocus
-                                      />
-                                      <button onClick={saveEditing} className="p-1 text-green-400">
-                                        <Check className="w-3 h-3" />
-                                      </button>
-                                      <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                        <X className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => playTakeFromLibrary(take, index, item.name)}
-                                        className="flex items-center gap-2"
-                                      >
-                                        <Play className="w-4 h-4 text-white" />
-                                        <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                        {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                        <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                      </button>
-                                      <div className="flex items-center gap-1">
-                                        <button
-                                          onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                          className="p-3 text-blue-400 active:text-blue-300"
-                                        >
-                                          <Edit3 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                          onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                          className="p-3 text-purple-400 active:text-purple-300"
-                                        >
-                                          <Share2 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteTake(take.id)}
-                                          className="p-3 text-red-400 active:text-red-300"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Frammenti */}
-                          {item.fragments?.map((fragment) => (
-                            <div key={fragment.id} className="bg-green-900/30 border border-green-700/50 rounded-lg overflow-hidden">
-                              <div className="flex items-center justify-between p-1.5">
-                                {editingItem?.type === 'fragment' && editingItem?.id === fragment.id ? (
-                                  <div className="flex-1 flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={editingName}
-                                      onChange={(e) => setEditingName(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') saveEditing();
-                                        if (e.key === 'Escape') cancelEditing();
-                                      }}
-                                      className="flex-1 bg-green-800/50 text-green-100 text-xs px-2 py-1 rounded border border-green-500 outline-none"
-                                      autoFocus
-                                    />
-                                    <button onClick={saveEditing} className="p-1 text-green-400">
-                                      <Check className="w-3 h-3" />
-                                    </button>
-                                    <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => toggleFragment(fragment.id)}
-                                      className="flex-1 flex items-center gap-1"
-                                    >
-                                      {expandedFragments[fragment.id] ? (
-                                        <ChevronDown className="w-3 h-3 text-green-400" />
-                                      ) : (
-                                        <ChevronRight className="w-3 h-3 text-gray-400" />
-                                      )}
-                                      <span className="text-green-200 text-xs">{fragment.name}</span>
-                                      <span className="text-green-500/60 text-[10px]">({fragment.takes?.length || 0})</span>
-                                    </button>
-                                    <button
-                                      onClick={() => selectFragmentAsSession(fragment, item)}
-                                      className="p-1 text-blue-400 active:text-blue-300"
-                                      title="Usa come sessione"
-                                    >
-                                      <Music className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={() => startEditing('fragment', fragment.id, fragment.name)}
-                                      className="p-1 text-green-400 active:text-green-300"
-                                    >
-                                      <Edit3 className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteFragment(fragment.id)}
-                                      className="p-1 text-red-400 active:text-red-300"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-
-                              {expandedFragments[fragment.id] && fragment.takes?.length > 0 && (
-                                <div className="px-1.5 pb-1.5 space-y-1">
-                                  {fragment.takes.map((take, index) => (
-                                    <div
-                                      key={take.id}
-                                      className="flex items-center justify-between py-1 px-1 bg-gray-700/50 rounded"
-                                    >
-                                      {editingItem?.type === 'take' && editingItem?.id === take.id ? (
-                                        <div className="flex-1 flex items-center gap-2">
-                                          <input
-                                            type="text"
-                                            value={editingName}
-                                            onChange={(e) => setEditingName(e.target.value)}
-                                            onKeyDown={(e) => {
-                                              if (e.key === 'Enter') saveEditing();
-                                              if (e.key === 'Escape') cancelEditing();
-                                            }}
-                                            className="flex-1 bg-gray-500 text-white text-xs px-2 py-1 rounded border border-blue-500 outline-none"
-                                            autoFocus
-                                          />
-                                          <button onClick={saveEditing} className="p-1 text-green-400">
-                                            <Check className="w-3 h-3" />
-                                          </button>
-                                          <button onClick={cancelEditing} className="p-1 text-gray-400">
-                                            <X className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <>
-                                          <button
-                                            onClick={() => playTakeFromLibrary(take, index, fragment.name)}
-                                            className="flex items-center gap-2"
-                                          >
-                                            <Play className="w-4 h-4 text-white" />
-                                            <span className="text-white text-xs">{take.name || `Take ${index + 1}`}</span>
-                                            {take.duration > 0 && <span className="text-blue-400 text-xs">{formatTakeDuration(take.duration)}</span>}
-                                            <span className="text-gray-400 text-xs">{formatTime(take.createdAt)}</span>
-                                          </button>
-                                          <div className="flex items-center gap-1">
-                                            <button
-                                              onClick={() => startEditing('take', take.id, take.name || `Take ${index + 1}`)}
-                                              className="p-3 text-blue-400 active:text-blue-300"
-                                            >
-                                              <Edit3 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              onClick={() => shareTakeFromLibrary(take, take.name || `Take ${index + 1}`)}
-                                              className="p-3 text-purple-400 active:text-purple-300"
-                                            >
-                                              <Share2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeleteTake(take.id)}
-                                              className="p-3 text-red-400 active:text-red-300"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </button>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                ))
-              )}
-            </div>
-          </div>
+          <LibraryTab
+            isDark={isDark}
+            library={library}
+            loadLibrary={loadLibrary}
+            expandedAuthors={expandedAuthors}
+            toggleAuthor={toggleAuthor}
+            expandedOperas={expandedOperas}
+            toggleOpera={toggleOpera}
+            expandedTracks={expandedTracks}
+            toggleTrack={toggleTrack}
+            expandedFragments={expandedFragments}
+            toggleFragment={toggleFragment}
+            editingItem={editingItem}
+            editingName={editingName}
+            setEditingName={setEditingName}
+            saveEditing={saveEditing}
+            cancelEditing={cancelEditing}
+            startEditing={startEditing}
+            handleDeleteAuthor={handleDeleteAuthor}
+            handleDeleteOpera={handleDeleteOpera}
+            handleDeleteTrack={handleDeleteTrack}
+            handleDeleteFragment={handleDeleteFragment}
+            selectFragmentAsSession={selectFragmentAsSession}
+            playTakeFromLibrary={playTakeFromLibrary}
+          />
         )}
 
         {/* Tab Sessioni */}
@@ -4118,110 +3058,17 @@ export default function VideoRecorderApp() {
 
         {/* Tab Impostazioni */}
         {activeTab === 'impostazioni' && (
-          <div className={`h-full overflow-y-auto p-4 ${isDark ? 'bg-gray-950' : 'bg-white'}`}>
-            <div className="flex items-center gap-2 mb-6">
-              <Settings className="w-5 h-5 text-gray-400" />
-              <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Impostazioni</h2>
-            </div>
-
-            {/* Pedali */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-4">
-              <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                <Keyboard className="w-4 h-4 text-gray-400" />
-                Pedali USB / Tastiera
-              </h3>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Pedale sinistro (Rec)</span>
-                  <button
-                    onClick={() => setIsListeningForKey('left')}
-                    className={`px-3 py-1.5 rounded-lg text-sm ${
-                      isListeningForKey === 'left'
-                        ? 'bg-yellow-600 text-white animate-pulse'
-                        : 'bg-gray-700 text-gray-300'
-                    }`}
-                  >
-                    {isListeningForKey === 'left' ? 'Premi...' : getKeyDisplayName(leftPedalKey)}
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Pedale destro (Play)</span>
-                  <button
-                    onClick={() => setIsListeningForKey('right')}
-                    className={`px-3 py-1.5 rounded-lg text-sm ${
-                      isListeningForKey === 'right'
-                        ? 'bg-yellow-600 text-white animate-pulse'
-                        : 'bg-gray-700 text-gray-300'
-                    }`}
-                  >
-                    {isListeningForKey === 'right' ? 'Premi...' : getKeyDisplayName(rightPedalKey)}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Audio Feedback */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Volume2 className="w-4 h-4 text-gray-400" />
-                  <span className="text-white">Feedback audio</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setAudioFeedbackEnabled(!audioFeedbackEnabled);
-                    updateSetting('audioFeedbackEnabled', !audioFeedbackEnabled);
-                  }}
-                  className={`w-12 h-7 rounded-full transition-colors ${
-                    audioFeedbackEnabled ? 'bg-blue-600' : 'bg-gray-600'
-                  }`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full mx-1 transition-transform ${
-                    audioFeedbackEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Qualità Video */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-4">
-              <h3 className="text-white font-medium mb-3">Qualità Video</h3>
-              <div className="space-y-2">
-                {Object.entries(VIDEO_QUALITY_OPTIONS).map(([key, opt]) => (
-                  <button
-                    key={key}
-                    onClick={() => updateSetting('videoQuality', key)}
-                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                      settings.videoQuality === key
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Tema */}
-            <div className="bg-gray-800/50 rounded-xl p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-white">Tema scuro</span>
-                <button
-                  onClick={() => updateSetting('theme', settings.theme === 'dark' ? 'light' : 'dark')}
-                  className={`w-12 h-7 rounded-full transition-colors ${
-                    settings.theme === 'dark' ? 'bg-blue-600' : 'bg-gray-600'
-                  }`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full mx-1 transition-transform ${
-                    settings.theme === 'dark' ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </button>
-              </div>
-            </div>
-          </div>
+          <SettingsTab
+            isDark={isDark}
+            settings={settings}
+            updateSetting={updateSetting}
+            leftPedalKey={leftPedalKey}
+            rightPedalKey={rightPedalKey}
+            isListeningForKey={isListeningForKey}
+            setIsListeningForKey={setIsListeningForKey}
+            audioFeedbackEnabled={audioFeedbackEnabled}
+            setAudioFeedbackEnabled={setAudioFeedbackEnabled}
+          />
         )}
       </div>
 
