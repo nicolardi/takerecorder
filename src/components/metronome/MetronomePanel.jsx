@@ -19,6 +19,7 @@ export function MetronomePanel({ isDark }) {
     recordMetronomeAudio,
     visualEffect,
     visualEffects,
+    volume,
     toggle,
     updateBpm,
     incrementBpm,
@@ -27,6 +28,7 @@ export function MetronomePanel({ isDark }) {
     setAccentFirstBeat,
     setRecordMetronomeAudio,
     updateVisualEffect,
+    updateVolume,
     currentTrackId,
     saveAsTrackDefault,
   } = useMetronomeContext();
@@ -109,6 +111,7 @@ export function MetronomePanel({ isDark }) {
             recordMetronomeAudio={recordMetronomeAudio}
             visualEffect={visualEffect}
             visualEffects={visualEffects}
+            volume={volume}
             onBpmChange={updateBpm}
             onIncrementBpm={incrementBpm}
             onDecrementBpm={decrementBpm}
@@ -116,6 +119,7 @@ export function MetronomePanel({ isDark }) {
             onAccentFirstBeatChange={setAccentFirstBeat}
             onRecordMetronomeAudioChange={setRecordMetronomeAudio}
             onVisualEffectChange={updateVisualEffect}
+            onVolumeChange={updateVolume}
             isDark={isDark}
           />
 

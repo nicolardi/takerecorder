@@ -1,6 +1,7 @@
 import React from 'react';
-import { Music, Play, Pause } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
 import { useMetronomeContext } from '../../contexts/MetronomeContext';
+import { MetronomeIcon } from '../icons/MetronomeIcon';
 
 export function MetronomeQuickToggle({ isDark }) {
   const {
@@ -54,12 +55,12 @@ export function MetronomeQuickToggle({ isDark }) {
           }
         `}
       >
-        <Music
-          className={`w-4 h-4 ${isPlaying ? 'animate-pulse' : ''}`}
+        <MetronomeIcon
+          className={`w-4 h-4 flex-shrink-0 ${isPlaying ? 'animate-pulse' : ''}`}
         />
-        <span>{bpm}</span>
+        <span className="w-8 text-center font-mono tabular-nums">{bpm}</span>
         {isPlaying && (
-          <span className="ml-0.5 text-xs opacity-75">
+          <span className="w-8 text-center text-xs opacity-75 font-mono tabular-nums">
             {currentBeat + 1}/{timeSignature.beats}
           </span>
         )}

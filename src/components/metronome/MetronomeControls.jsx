@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, Plus, ChevronDown } from 'lucide-react';
+import { Minus, Plus, ChevronDown, Volume2 } from 'lucide-react';
 import { TIME_SIGNATURES } from '../../hooks/useMetronome';
 import { useTapTempo } from '../../hooks/useTapTempo';
 
@@ -12,6 +12,7 @@ export function MetronomeControls({
   recordMetronomeAudio,
   visualEffect,
   visualEffects,
+  volume,
   onBpmChange,
   onIncrementBpm,
   onDecrementBpm,
@@ -19,6 +20,7 @@ export function MetronomeControls({
   onAccentFirstBeatChange,
   onRecordMetronomeAudioChange,
   onVisualEffectChange,
+  onVolumeChange,
   isDark,
 }) {
   // Tap tempo hook
@@ -193,6 +195,26 @@ export function MetronomeControls({
           )}
         </div>
       )}
+
+      {/* Volume Control */}
+      <div>
+        <label className={`flex items-center gap-2 text-sm mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+          <Volume2 className="w-4 h-4" />
+          Volume: {Math.round((volume || 0.7) * 100)}%
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round((volume || 0.7) * 100)}
+          onChange={(e) => onVolumeChange && onVolumeChange(parseInt(e.target.value, 10) / 100)}
+          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+        />
+        <div className="flex justify-between mt-1">
+          <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>0%</span>
+          <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>100%</span>
+        </div>
+      </div>
 
       {/* Options */}
       <div className="space-y-3">
