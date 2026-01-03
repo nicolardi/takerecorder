@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { SessionProvider, useSession } from './contexts/SessionContext';
 import { RecordingProvider, useRecording } from './contexts/RecordingContext';
+import { MetronomeProvider } from './contexts/MetronomeContext';
 import { BottomTabBar } from './components/BottomTabBar';
 import { RecordPage } from './pages/RecordPage';
 import { SessionsTab } from './components/tabs/SessionsTab';
@@ -9,6 +10,7 @@ import { LibraryTab } from './components/tabs/LibraryTab';
 import { StatisticsTab } from './components/tabs/StatisticsTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { TakePlayerModal } from './components/modals/TakePlayerModal';
+import { MetronomePanel } from './components/metronome/MetronomePanel';
 import { deleteTake } from './videoLibrary';
 
 // Map routes to tab IDs
@@ -249,6 +251,9 @@ function AppContent() {
         onDelete={deletePlayingTake}
         onTag={playingTake?.onTag ? tagPlayingTake : undefined}
       />
+
+      {/* Metronome Panel */}
+      <MetronomePanel isDark={isDark} />
     </div>
   );
 }
@@ -258,7 +263,9 @@ function App() {
     <BrowserRouter>
       <SessionProvider>
         <RecordingProvider>
-          <AppContent />
+          <MetronomeProvider>
+            <AppContent />
+          </MetronomeProvider>
         </RecordingProvider>
       </SessionProvider>
     </BrowserRouter>

@@ -3,6 +3,7 @@ import { useSettings } from '../hooks/useSettings';
 import { useRecordingTimer } from '../hooks/useRecordingTimer';
 import { useMultipleCameras } from '../hooks/useMultipleCameras';
 import { VIDEO_QUALITY_OPTIONS } from '../utils/settingsStorage';
+import { getMetronomeStream, getAudioContext } from '../utils/metronomeAudio';
 
 const RecordingContext = createContext(null);
 
@@ -171,8 +172,46 @@ export function RecordingProvider({ children }) {
     }
   }, [stream, facingMode, orientation, videoEnabled, settings.videoQuality, playPlayingSound]);
 
+  // Ref for mixed stream (when recording metronome audio)
+  const mixedStreamRef = useRef(null);
+
+  // Create a mixed audio stream (microphone + metronome)
+  const createMixedStream = useCallback((micStream, metronomeStream) => {
+    try {
+      const audioContext = getAudioContext();
+
+      // Create a destination for the mixed audio
+      const destination = audioContext.createMediaStreamDestination();
+
+      // Connect microphone audio
+      const micSource = audioContext.createMediaStreamSource(micStream);
+      micSource.connect(destination);
+
+      // Connect metronome audio
+      if (metronomeStream) {
+        const metronomeSource = audioContext.createMediaStreamSource(metronomeStream);
+        metronomeSource.connect(destination);
+      }
+
+      // Create new stream with video track (if any) + mixed audio
+      const videoTracks = micStream.getVideoTracks();
+      const mixedAudioTrack = destination.stream.getAudioTracks()[0];
+
+      const mixedStream = new MediaStream();
+      videoTracks.forEach(track => mixedStream.addTrack(track));
+      if (mixedAudioTrack) {
+        mixedStream.addTrack(mixedAudioTrack);
+      }
+
+      return mixedStream;
+    } catch (error) {
+      console.error('Error creating mixed stream:', error);
+      return micStream; // Fallback to original stream
+    }
+  }, []);
+
   // Start recording
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (recordMetronome = false) => {
     if (isRecording) return;
 
     let currentStream = stream;
@@ -193,7 +232,17 @@ export function RecordingProvider({ children }) {
         audioBitsPerSecond: 128000,
       };
 
-      mediaRecorderRef.current = new MediaRecorder(currentStream, options);
+      // Check if we need to mix metronome audio
+      let streamToRecord = currentStream;
+      if (recordMetronome) {
+        const metronomeStream = getMetronomeStream();
+        if (metronomeStream) {
+          streamToRecord = createMixedStream(currentStream, metronomeStream);
+          mixedStreamRef.current = streamToRecord;
+        }
+      }
+
+      mediaRecorderRef.current = new MediaRecorder(streamToRecord, options);
       chunksRef.current = [];
 
       mediaRecorderRef.current.ondataavailable = (event) => {
@@ -212,6 +261,8 @@ export function RecordingProvider({ children }) {
           isVideo: videoEnabled
         });
         setCurrentRecordingSaved(false);
+        // Clean up mixed stream ref
+        mixedStreamRef.current = null;
       };
 
       mediaRecorderRef.current.start(1000);
@@ -222,7 +273,7 @@ export function RecordingProvider({ children }) {
       console.error('Errore avvio registrazione:', err);
       setError('Errore durante l\'avvio della registrazione.');
     }
-  }, [isRecording, stream, initMedia, facingMode, orientation, videoEnabled, settings.videoQuality, startTimer, playRecordingSound]);
+  }, [isRecording, stream, initMedia, facingMode, orientation, videoEnabled, settings.videoQuality, startTimer, playRecordingSound, createMixedStream]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -239,11 +290,11 @@ export function RecordingProvider({ children }) {
   }, [isRecording, stopTimer, playStopSound]);
 
   // Toggle recording
-  const toggleRecording = useCallback(() => {
+  const toggleRecording = useCallback((recordMetronome = false) => {
     if (isRecording) {
       stopRecording();
     } else {
-      startRecording();
+      startRecording(recordMetronome);
     }
   }, [isRecording, startRecording, stopRecording]);
 

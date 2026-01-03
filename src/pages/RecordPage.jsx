@@ -1,9 +1,12 @@
 import React, { useEffect, useCallback, useRef } from 'react';
-import { Video, Circle, Square, Play, RotateCcw, AlertCircle, X, Share2, Music, Edit3, Mic } from 'lucide-react';
+import { Video, Circle, Square, Play, RotateCcw, AlertCircle, X, Share2, Music, Mic } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
 import { useRecording } from '../contexts/RecordingContext';
+import { useMetronomeContext } from '../contexts/MetronomeContext';
 import { SessionPickerModal } from '../components/modals/SessionPickerModal';
 import { TakePlayerModal } from '../components/modals/TakePlayerModal';
+import { MetronomeQuickToggle } from '../components/metronome/MetronomeQuickToggle';
+import { MetronomePanel } from '../components/metronome/MetronomePanel';
 
 // Long press duration in ms for toggle incognito
 const LONG_PRESS_DURATION = 800;
@@ -13,10 +16,10 @@ export function RecordPage() {
     currentSession,
     showSessionPicker,
     setShowSessionPicker,
-    takeCount,
     saveNewTake,
-    startEditing,
   } = useSession();
+
+  const { setCurrentTrackId, recordMetronomeAudio } = useMetronomeContext();
 
   const {
     settings,
@@ -69,6 +72,16 @@ export function RecordPage() {
   const longPressTimerRef = useRef(null);
   const isLongPressRef = useRef(false);
 
+  // Update metronome track ID when session changes
+  useEffect(() => {
+    setCurrentTrackId(currentSession?.trackId || null);
+  }, [currentSession?.trackId, setCurrentTrackId]);
+
+  // Wrapper for toggleRecording that passes metronome flag
+  const handleToggleRecording = useCallback(() => {
+    toggleRecording(recordMetronomeAudio);
+  }, [toggleRecording, recordMetronomeAudio]);
+
   // Long press handlers for incognito toggle
   const handleTouchStart = useCallback(() => {
     isLongPressRef.current = false;
@@ -104,7 +117,7 @@ export function RecordPage() {
       if (e.key === leftPedalKey) {
         e.preventDefault();
         if (!showSessionPicker && currentSession) {
-          toggleRecording();
+          handleToggleRecording();
         }
       }
 
@@ -129,7 +142,7 @@ export function RecordPage() {
     rightPedalKey,
     showSessionPicker,
     currentSession,
-    toggleRecording,
+    handleToggleRecording,
     recordedMedia,
     isRecording,
     isPlaying,
@@ -231,7 +244,6 @@ export function RecordPage() {
     closePlayingTake();
   }, [playingTake, closePlayingTake]);
 
-  const isLandscape = orientation === 'landscape';
 
   // Track if we need to auto-save in incognito
   const pendingIncognitoSaveRef = useRef(false);
@@ -296,6 +308,17 @@ export function RecordPage() {
           muted
           className="hidden"
         />
+
+        {/* Error message */}
+        {error && (
+          <div className="absolute top-4 left-4 right-4 bg-red-900/90 text-red-100 px-4 py-3 rounded-xl flex items-center gap-3 z-30">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
 
         {/* Full screen tap area */}
         <button
@@ -372,27 +395,19 @@ export function RecordPage() {
             </div>
           </button>
 
-          {/* Take counter badge */}
+          {/* Metronome quick toggle */}
           {currentSession && (
-            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-              <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium ${isDark ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
-                Take {takeCount + 1}
-              </span>
-              <button
-                onClick={() => currentSession && startEditing('fragment', currentSession.fragmentId, currentSession.fragmentName || '')}
-                className="p-1.5 sm:p-2 text-gray-400 active:text-white"
-              >
-                <Edit3 className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
+            <div className="flex items-center flex-shrink-0">
+              <MetronomeQuickToggle isDark={isDark} />
             </div>
           )}
         </div>
       </div>
 
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
+      {/* Main content area - full height with overlaid controls */}
+      <div className="flex-1 relative overflow-hidden">
         {error && (
-          <div className="absolute top-20 left-4 right-4 bg-red-900/90 text-red-100 px-4 py-3 rounded-xl flex items-center gap-3 z-30">
+          <div className="absolute top-4 left-4 right-4 bg-red-900/90 text-red-100 px-4 py-3 rounded-xl flex items-center gap-3 z-30">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <p className="text-sm">{error}</p>
             <button onClick={() => setError(null)} className="ml-auto">
@@ -403,13 +418,13 @@ export function RecordPage() {
 
         {/* Save message */}
         {saveMessage && !isIncognito && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium z-30">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium z-30">
             {saveMessage}
           </div>
         )}
 
-        {/* Video preview or audio mode indicator */}
-        <div className={`relative w-full max-w-2xl ${isLandscape ? 'h-[60vh]' : 'aspect-[3/4]'} ${isDark ? 'bg-gray-900' : 'bg-gray-200'} rounded-2xl overflow-hidden`}>
+        {/* Video preview or audio mode indicator - FULL AREA */}
+        <div className={`absolute inset-0 ${isDark ? 'bg-gray-900' : 'bg-gray-200'}`}>
           {videoEnabled ? (
             <>
               <video
@@ -422,7 +437,7 @@ export function RecordPage() {
 
               {/* Recording indicator */}
               {isRecording && (
-                <div className="absolute top-4 left-4 flex items-center gap-3 bg-black/60 px-4 py-2 rounded-full">
+                <div className="absolute top-4 left-4 flex items-center gap-3 bg-black/60 px-4 py-2 rounded-full z-20">
                   <div className="w-5 h-5 bg-red-500 rounded-full animate-pulse" />
                   <span className="text-white font-mono text-lg font-bold">REC</span>
                   <span className="text-white font-mono text-sm">{formatDuration(recordingDuration)}</span>
@@ -430,10 +445,10 @@ export function RecordPage() {
               )}
 
               {/* Camera switch button */}
-              {hasMultipleCameras && !isRecording && (
+              {hasMultipleCameras && !isRecording && !recordedMedia && (
                 <button
                   onClick={switchCamera}
-                  className="absolute top-4 right-4 p-3 bg-black/50 rounded-full active:bg-black/70"
+                  className="absolute top-4 right-4 p-3 bg-black/50 rounded-full active:bg-black/70 z-20"
                 >
                   <RotateCcw className="w-5 h-5 text-white" />
                 </button>
@@ -442,18 +457,15 @@ export function RecordPage() {
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center">
               <Mic className={`w-20 h-20 ${isRecording ? 'text-red-500 animate-pulse' : 'text-gray-500'}`} />
-              <p className={`mt-4 text-lg ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                {isRecording ? 'Registrazione audio...' : 'Solo audio'}
-              </p>
               {isRecording && (
-                <p className="mt-2 text-2xl font-mono text-white">{formatDuration(recordingDuration)}</p>
+                <p className="mt-4 text-2xl font-mono text-white">{formatDuration(recordingDuration)}</p>
               )}
             </div>
           )}
 
           {/* Recorded media playback overlay */}
           {recordedMedia && !isRecording && (
-            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center">
+            <div className="absolute inset-0 bg-black flex flex-col items-center justify-center">
               {recordedMedia.isVideo ? (
                 <video
                   ref={videoPlaybackRef}
@@ -473,46 +485,38 @@ export function RecordPage() {
                   />
                 </div>
               )}
-
-              {/* Playback controls */}
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-center gap-4">
-                <button
-                  onClick={isPlaying ? stopPlayback : playRecordedMedia}
-                  className={`p-4 rounded-full ${isPlaying ? 'bg-yellow-600' : 'bg-green-600'} active:opacity-80`}
-                >
-                  {isPlaying ? <Square className="w-6 h-6 text-white" /> : <Play className="w-6 h-6 text-white" />}
-                </button>
-              </div>
             </div>
           )}
         </div>
 
-        {/* Control buttons */}
-        <div className="mt-6 flex items-center gap-4">
-          {/* Video/Audio toggle */}
-          <button
-            onClick={toggleVideoMode}
-            disabled={isRecording}
-            className={`p-3 rounded-full ${videoEnabled ? 'bg-blue-600' : 'bg-gray-700'} disabled:opacity-50`}
-          >
-            {videoEnabled ? <Video className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
-          </button>
+        {/* Overlaid control buttons - bottom center */}
+        <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-4 z-20">
+          {/* Video/Audio toggle - only show when not in playback mode */}
+          {!recordedMedia && (
+            <button
+              onClick={toggleVideoMode}
+              disabled={isRecording}
+              className={`p-3 rounded-full ${videoEnabled ? 'bg-blue-600' : 'bg-gray-700'} disabled:opacity-50 shadow-lg`}
+            >
+              {videoEnabled ? <Video className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
+            </button>
+          )}
 
           {/* Record button */}
           {!recordedMedia && (
             <button
-              onClick={toggleRecording}
+              onClick={handleToggleRecording}
               disabled={!currentSession}
-              className={`p-6 rounded-full ${
+              className={`p-3 rounded-full ${
                 isRecording
                   ? 'bg-red-600 active:bg-red-700'
                   : 'bg-red-500 active:bg-red-600'
-              } disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
+              } disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg`}
             >
               {isRecording ? (
-                <Square className="w-8 h-8 text-white" />
+                <Square className="w-5 h-5 text-white" />
               ) : (
-                <Circle className="w-8 h-8 text-white fill-current" />
+                <Circle className="w-5 h-5 text-white fill-current" />
               )}
             </button>
           )}
@@ -523,30 +527,40 @@ export function RecordPage() {
               {/* Discard */}
               <button
                 onClick={discardRecording}
-                className="p-3 rounded-full bg-gray-700 active:bg-gray-600"
+                className="p-3 rounded-full bg-gray-700 active:bg-gray-600 shadow-lg"
               >
                 <X className="w-5 h-5 text-white" />
+              </button>
+
+              {/* Play/Stop */}
+              <button
+                onClick={isPlaying ? stopPlayback : playRecordedMedia}
+                className={`p-3 rounded-full ${isPlaying ? 'bg-yellow-600' : 'bg-green-600'} active:opacity-80 shadow-lg`}
+              >
+                {isPlaying ? <Square className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white" />}
               </button>
 
               {/* Save */}
               <button
                 onClick={handleManualSave}
                 disabled={currentRecordingSaved}
-                className={`p-6 rounded-full ${
+                className={`p-3 rounded-full ${
                   currentRecordingSaved
                     ? 'bg-green-800'
                     : 'bg-green-600 active:bg-green-700'
-                } disabled:opacity-50`}
+                } disabled:opacity-50 shadow-lg`}
               >
-                <span className="text-white text-lg font-bold">
-                  {currentRecordingSaved ? '✓' : 'Salva'}
-                </span>
+                {currentRecordingSaved ? (
+                  <span className="text-white text-lg font-bold">✓</span>
+                ) : (
+                  <span className="text-white text-xs font-bold">Salva</span>
+                )}
               </button>
 
               {/* Share */}
               <button
                 onClick={shareRecording}
-                className="p-3 rounded-full bg-blue-600 active:bg-blue-700"
+                className="p-3 rounded-full bg-blue-600 active:bg-blue-700 shadow-lg"
               >
                 <Share2 className="w-5 h-5 text-white" />
               </button>
@@ -565,6 +579,9 @@ export function RecordPage() {
         onShare={sharePlayingTake}
         onDelete={deletePlayingTake}
       />
+
+      {/* Metronome Panel */}
+      <MetronomePanel isDark={isDark} />
     </div>
   );
 }

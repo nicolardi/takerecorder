@@ -347,6 +347,48 @@ export const renameTrack = async (trackId, newName) => {
   });
 };
 
+// Update track tempo (BPM and time signature)
+export const updateTrackTempo = async (trackId, bpm, timeSignature) => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('tracks', 'readwrite');
+    const store = tx.objectStore('tracks');
+    const request = store.get(trackId);
+    request.onsuccess = () => {
+      const track = request.result;
+      if (track) {
+        track.defaultBpm = bpm;
+        track.timeSignature = timeSignature;
+        store.put(track);
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+// Get track tempo (BPM and time signature)
+export const getTrackTempo = async (trackId) => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('tracks', 'readonly');
+    const store = tx.objectStore('tracks');
+    const request = store.get(trackId);
+    request.onsuccess = () => {
+      const track = request.result;
+      if (track && (track.defaultBpm || track.timeSignature)) {
+        resolve({
+          bpm: track.defaultBpm || null,
+          timeSignature: track.timeSignature || null,
+        });
+      } else {
+        resolve(null);
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+};
+
 // ============================================
 // FRAMMENTI (Fragments) - es. "Battute 5-7", "Pagina 2"
 // ============================================
