@@ -17,6 +17,14 @@ let onBeatCallback = null;
 let masterGain = null;
 let recordingDestination = null;
 
+// Current metronome parameters (updated in real-time)
+let currentParams = {
+  bpm: 120,
+  beatsPerMeasure: 4,
+  accentFirst: true,
+  volume: 0.7,
+};
+
 // Initialize or get AudioContext
 export const getAudioContext = () => {
   if (!audioContext) {
@@ -93,9 +101,10 @@ const scheduleNote = (time, isAccent, volume) => {
   osc.stop(time + 0.05);
 };
 
-// Scheduler function - called repeatedly
-const scheduler = (bpm, beatsPerMeasure, accentFirst, volume) => {
+// Scheduler function - called repeatedly, uses currentParams
+const scheduler = () => {
   const ctx = getAudioContext();
+  const { bpm, beatsPerMeasure, accentFirst, volume } = currentParams;
   const secondsPerBeat = 60.0 / bpm;
 
   // Schedule all notes that need to be played before the next interval
@@ -109,7 +118,10 @@ const scheduler = (bpm, beatsPerMeasure, accentFirst, volume) => {
       const timeUntilBeat = (nextNoteTime - ctx.currentTime) * 1000;
 
       setTimeout(() => {
-        onBeatCallback(beatToReport);
+        // Check again in case metronome was stopped
+        if (onBeatCallback) {
+          onBeatCallback(beatToReport);
+        }
       }, Math.max(0, timeUntilBeat));
     }
 
@@ -131,14 +143,15 @@ export const startMetronome = async (bpm, beatsPerMeasure, accentFirst, volume, 
   nextNoteTime = ctx.currentTime;
   currentBeat = 0;
 
+  // Set initial params
+  currentParams = { bpm, beatsPerMeasure, accentFirst, volume };
+
   // Set volume
   const gain = getMasterGain();
   gain.gain.value = 1;
 
   // Start scheduler
-  schedulerInterval = setInterval(() => {
-    scheduler(bpm, beatsPerMeasure, accentFirst, volume);
-  }, SCHEDULE_INTERVAL);
+  schedulerInterval = setInterval(scheduler, SCHEDULE_INTERVAL);
 
   // Trigger first beat immediately
   if (beatCallback) {
@@ -154,6 +167,11 @@ export const stopMetronome = () => {
   }
   onBeatCallback = null;
   currentBeat = 0;
+
+  // Suspend AudioContext when metronome stops to avoid interference with HTML5 audio
+  if (audioContext && audioContext.state === 'running') {
+    audioContext.suspend();
+  }
 };
 
 // Check if metronome is running
@@ -163,8 +181,11 @@ export const isMetronomeRunning = () => {
 
 // Update metronome parameters while running
 export const updateMetronomeParams = (bpm, beatsPerMeasure, accentFirst, volume) => {
-  // Parameters will be picked up on next scheduler call
-  // No need to restart - the scheduler reads these on each iteration
+  // Update params - scheduler will pick them up on next iteration
+  if (bpm !== undefined) currentParams.bpm = bpm;
+  if (beatsPerMeasure !== undefined) currentParams.beatsPerMeasure = beatsPerMeasure;
+  if (accentFirst !== undefined) currentParams.accentFirst = accentFirst;
+  if (volume !== undefined) currentParams.volume = volume;
 };
 
 // Get the recording stream from metronome

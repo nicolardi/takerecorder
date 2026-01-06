@@ -19,7 +19,7 @@ export function RecordPage() {
     saveNewTake,
   } = useSession();
 
-  const { setCurrentTrackId, recordMetronomeAudio } = useMetronomeContext();
+  const { setCurrentTrackId, recordMetronomeAudio, stop: stopMetronome, start: startMetronome, isPlaying: isMetronomePlaying } = useMetronomeContext();
 
   const {
     settings,
@@ -35,7 +35,6 @@ export function RecordPage() {
     formatDuration,
     getRecordingDuration,
     currentRecordingSaved,
-    setCurrentRecordingSaved,
     saveMessage,
     setSaveMessage,
     videoEnabled,
@@ -54,6 +53,9 @@ export function RecordPage() {
     discardRecording,
     switchCamera,
     toggleVideoMode,
+    setFacingModeWithSave,
+    setVideoEnabledWithSave,
+    stopStream,
     playRecordedMedia,
     stopPlayback,
     leftPedalKey,
@@ -72,15 +74,65 @@ export function RecordPage() {
   const longPressTimerRef = useRef(null);
   const isLongPressRef = useRef(false);
 
+  // Track if metronome was playing before playback (to restore it after discard)
+  const wasMetronomePlayingRef = useRef(false);
+
   // Update metronome track ID when session changes
   useEffect(() => {
     setCurrentTrackId(currentSession?.trackId || null);
   }, [currentSession?.trackId, setCurrentTrackId]);
 
+  // Cleanup: stop stream when leaving the record page
+  useEffect(() => {
+    return () => {
+      stopStream();
+    };
+  }, [stopStream]);
+
+  // Auto-start playback when recording stops and media is available
+  useEffect(() => {
+    if (recordedMedia && !isRecording) {
+      // Save metronome state before stopping
+      wasMetronomePlayingRef.current = isMetronomePlaying;
+      if (isMetronomePlaying) {
+        stopMetronome();
+      }
+      // Small delay to ensure metronome audio is fully stopped
+      setTimeout(() => {
+        playRecordedMedia();
+      }, 100);
+    }
+  }, [recordedMedia]); // Only trigger when recordedMedia changes
+
   // Wrapper for toggleRecording that passes metronome flag
   const handleToggleRecording = useCallback(() => {
     toggleRecording(recordMetronomeAudio);
   }, [toggleRecording, recordMetronomeAudio]);
+
+  // Wrapper for playRecordedMedia that stops metronome first
+  const handlePlayRecordedMedia = useCallback(() => {
+    // Save metronome state before stopping
+    wasMetronomePlayingRef.current = isMetronomePlaying;
+    if (isMetronomePlaying) {
+      stopMetronome();
+      // Small delay to ensure metronome audio is fully stopped
+      setTimeout(() => {
+        playRecordedMedia();
+      }, 100);
+    } else {
+      playRecordedMedia();
+    }
+  }, [isMetronomePlaying, stopMetronome, playRecordedMedia]);
+
+  // Wrapper for discardRecording that restores metronome if it was playing
+  const handleDiscardRecording = useCallback(() => {
+    discardRecording();
+    // Restore metronome if it was playing before playback
+    if (wasMetronomePlayingRef.current) {
+      wasMetronomePlayingRef.current = false;
+      startMetronome();
+    }
+  }, [discardRecording, startMetronome]);
 
   // Long press handlers for incognito toggle
   const handleTouchStart = useCallback(() => {
@@ -96,6 +148,11 @@ export function RecordPage() {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  }, []);
+
+  // Prevent context menu on long press (mobile)
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault();
   }, []);
 
   // Keyboard handling for pedals
@@ -128,7 +185,7 @@ export function RecordPage() {
           if (isPlaying) {
             stopPlayback();
           } else {
-            playRecordedMedia();
+            handlePlayRecordedMedia();
           }
         }
       }
@@ -147,7 +204,7 @@ export function RecordPage() {
     isRecording,
     isPlaying,
     stopPlayback,
-    playRecordedMedia,
+    handlePlayRecordedMedia,
     setIsListeningForKey,
   ]);
 
@@ -170,16 +227,24 @@ export function RecordPage() {
       const takeId = await saveNewTake(recordedMedia.blob, recordedMedia.mimeType, duration);
 
       if (takeId) {
-        setCurrentRecordingSaved(true);
         setSaveMessage('Salvato!');
-        setTimeout(() => setSaveMessage(null), 2000);
+        // After saving, return to record mode
+        setTimeout(() => {
+          setSaveMessage(null);
+          // Discard recording and restore metronome if it was playing
+          discardRecording();
+          if (wasMetronomePlayingRef.current) {
+            wasMetronomePlayingRef.current = false;
+            startMetronome();
+          }
+        }, 1000);
       }
     } catch (error) {
       console.error('Errore salvataggio:', error);
       setSaveMessage('Errore!');
       setTimeout(() => setSaveMessage(null), 2000);
     }
-  }, [recordedMedia, currentSession, currentRecordingSaved, getRecordingDuration, saveNewTake, setCurrentRecordingSaved, setSaveMessage]);
+  }, [recordedMedia, currentSession, currentRecordingSaved, getRecordingDuration, saveNewTake, setSaveMessage, discardRecording, startMetronome]);
 
   // Share recording
   const shareRecording = useCallback(async () => {
@@ -280,25 +345,29 @@ export function RecordPage() {
       pendingIncognitoSaveRef.current = true;
       stopRecording();
     } else {
-      // Force VIDEO mode with BACK camera for incognito
-      // Always reinitialize with correct settings for incognito
+      // Force VIDEO mode with BACK camera (environment) for incognito
+      // Update settings so they persist
+      setFacingModeWithSave('environment');
+      setVideoEnabledWithSave(true);
+      // Reinitialize with correct settings for incognito
       initMedia('environment', orientation, false, true).then(() => {
         startRecording();
       });
     }
-  }, [isRecording, stopRecording, initMedia, orientation, startRecording]);
+  }, [isRecording, stopRecording, initMedia, orientation, startRecording, setFacingModeWithSave, setVideoEnabledWithSave]);
 
   // INCOGNITO MODE - Minimal black UI for concert VIDEO recording
   if (isIncognito) {
     return (
       <div
-        className="h-full flex flex-col bg-black"
+        className="h-full flex flex-col bg-black select-none"
         onClick={handleFirstInteraction}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onMouseDown={handleTouchStart}
         onMouseUp={handleTouchEnd}
         onMouseLeave={handleTouchEnd}
+        onContextMenu={handleContextMenu}
       >
         {/* Hidden video element for recording */}
         <video
@@ -359,11 +428,12 @@ export function RecordPage() {
   // NORMAL MODE
   return (
     <div
-      className={`h-full flex flex-col ${isDark ? 'bg-black' : 'bg-gray-100'}`}
+      className={`h-full flex flex-col select-none ${isDark ? 'bg-black' : 'bg-gray-100'}`}
       onClick={handleFirstInteraction}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onMouseDown={handleTouchStart}
+      onContextMenu={handleContextMenu}
       onMouseUp={handleTouchEnd}
       onMouseLeave={handleTouchEnd}
     >
@@ -383,9 +453,9 @@ export function RecordPage() {
                   </p>
                   <p className="text-[10px] sm:text-xs text-gray-500 truncate">
                     {[
-                      currentSession.authorName,
+                      currentSession.fragmentName ? currentSession.trackName : null,
                       currentSession.operaName,
-                      currentSession.fragmentName ? currentSession.trackName : null
+                      currentSession.authorName
                     ].filter(Boolean).join(' > ')}
                   </p>
                 </>
@@ -469,19 +539,21 @@ export function RecordPage() {
               {recordedMedia.isVideo ? (
                 <video
                   ref={videoPlaybackRef}
-                  src={recordedMedia.url}
                   className="w-full h-full object-contain"
                   controls={false}
                   playsInline
-                  onEnded={stopPlayback}
+                  loop
                 />
               ) : (
-                <div className="flex flex-col items-center">
-                  <Mic className={`w-16 h-16 ${isPlaying ? 'text-green-500' : 'text-gray-400'}`} />
+                <div className="flex flex-col items-center gap-4">
+                  <Mic className={`w-16 h-16 ${isPlaying ? 'text-green-500 animate-pulse' : 'text-gray-400'}`} />
+                  {isPlaying && (
+                    <p className="text-white text-sm">Riproduzione in corso...</p>
+                  )}
                   <audio
                     ref={videoPlaybackRef}
-                    src={recordedMedia.url}
-                    onEnded={stopPlayback}
+                    loop
+                    preload="auto"
                   />
                 </div>
               )}
@@ -526,15 +598,15 @@ export function RecordPage() {
             <>
               {/* Discard */}
               <button
-                onClick={discardRecording}
-                className="p-3 rounded-full bg-gray-700 active:bg-gray-600 shadow-lg"
+                onClick={handleDiscardRecording}
+                className="p-3 rounded-full bg-red-600 active:bg-red-700 shadow-lg"
               >
                 <X className="w-5 h-5 text-white" />
               </button>
 
               {/* Play/Stop */}
               <button
-                onClick={isPlaying ? stopPlayback : playRecordedMedia}
+                onClick={isPlaying ? stopPlayback : handlePlayRecordedMedia}
                 className={`p-3 rounded-full ${isPlaying ? 'bg-yellow-600' : 'bg-green-600'} active:opacity-80 shadow-lg`}
               >
                 {isPlaying ? <Square className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white" />}

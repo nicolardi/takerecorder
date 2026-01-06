@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = {
   audioFeedbackEnabled: true,
   videoQuality: '1080p', // '720p' | '1080p' | '4k'
   theme: 'dark', // 'dark' | 'light' | 'incognito'
+  facingMode: 'user', // 'user' (front/selfie) | 'environment' (back/esterno)
+  videoEnabled: false, // true = video, false = audio only
 };
 
 export const VIDEO_QUALITY_OPTIONS = {

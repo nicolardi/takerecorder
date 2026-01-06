@@ -53,32 +53,33 @@ export function MetronomePanel({ isDark }) {
         onClick={closePanel}
       />
 
-      {/* Panel */}
-      <div
-        className={`
-          relative w-full sm:max-w-md mx-auto rounded-t-3xl sm:rounded-2xl
-          max-h-[90vh] overflow-y-auto
-          ${isDark ? 'bg-gray-900' : 'bg-white'}
-        `}
-      >
-        {/* Header */}
-        <div className={`
-          sticky top-0 flex items-center justify-between p-4 border-b
-          ${isDark ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}
-        `}>
-          <button
-            onClick={closePanel}
-            className={`p-2 rounded-full ${isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}
-          >
-            <X className={`w-6 h-6 ${isDark ? 'text-gray-400' : 'text-gray-600'}`} />
-          </button>
+      {/* Panel wrapper - relative container for close button */}
+      <div className="relative w-full sm:max-w-md mx-auto">
+        {/* Close button - positioned outside panel like other modals */}
+        <button
+          onClick={closePanel}
+          className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-red-600 flex items-center justify-center shadow-lg active:bg-red-700 z-10"
+        >
+          <X className="w-6 h-6 text-white" />
+        </button>
 
-          <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            Metronomo
-          </h2>
-
-          <div className="w-10" /> {/* Spacer for centering */}
-        </div>
+        {/* Panel */}
+        <div
+          className={`
+            rounded-t-3xl sm:rounded-2xl
+            max-h-[90vh] overflow-y-auto
+            ${isDark ? 'bg-gray-900' : 'bg-white'}
+          `}
+        >
+          {/* Header */}
+          <div className={`
+            sticky top-0 flex items-center justify-center p-4 border-b
+            ${isDark ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}
+          `}>
+            <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Metronomo
+            </h2>
+          </div>
 
         {/* Content */}
         <div className="p-6">
@@ -179,6 +180,7 @@ export function MetronomePanel({ isDark }) {
               </button>
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

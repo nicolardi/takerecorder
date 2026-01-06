@@ -18,9 +18,9 @@ export function RecordingProvider({ children }) {
   const [recordedMedia, setRecordedMedia] = useState(null);
   const [stream, setStream] = useState(null);
   const [error, setError] = useState(null);
-  const [facingMode, setFacingMode] = useState('user');
+  const [facingMode, setFacingMode] = useState(settings.facingMode || 'user');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [videoEnabled, setVideoEnabled] = useState(false);
+  const [videoEnabled, setVideoEnabled] = useState(settings.videoEnabled || false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [currentRecordingSaved, setCurrentRecordingSaved] = useState(false);
@@ -135,11 +135,21 @@ export function RecordingProvider({ children }) {
         try {
           mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         } catch (e) {
-          const fallbackConstraints = {
-            audio: true,
-            video: { facingMode: facing }
-          };
-          mediaStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+          // First fallback: try with just facingMode
+          try {
+            const fallbackConstraints = {
+              audio: true,
+              video: { facingMode: facing }
+            };
+            mediaStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+          } catch (e2) {
+            // Second fallback: try without facingMode constraint (use any available camera)
+            const anyVideoConstraints = {
+              audio: true,
+              video: true
+            };
+            mediaStream = await navigator.mediaDevices.getUserMedia(anyVideoConstraints);
+          }
         }
       } else {
         mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -268,12 +278,11 @@ export function RecordingProvider({ children }) {
       mediaRecorderRef.current.start(1000);
       setIsRecording(true);
       startTimer();
-      playRecordingSound();
     } catch (err) {
       console.error('Errore avvio registrazione:', err);
       setError('Errore durante l\'avvio della registrazione.');
     }
-  }, [isRecording, stream, initMedia, facingMode, orientation, videoEnabled, settings.videoQuality, startTimer, playRecordingSound, createMixedStream]);
+  }, [isRecording, stream, initMedia, facingMode, orientation, videoEnabled, settings.videoQuality, startTimer, createMixedStream]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -309,18 +318,30 @@ export function RecordingProvider({ children }) {
   }, [recordedMedia, resetTimer]);
 
   // Switch camera
-  const switchCamera = useCallback(() => {
+  const switchCamera = useCallback(async () => {
     if (isRecording || !videoEnabled) return;
     const newFacing = facingMode === 'user' ? 'environment' : 'user';
-    setFacingMode(newFacing);
-    initMedia(newFacing, orientation, false, videoEnabled);
-  }, [isRecording, videoEnabled, facingMode, initMedia, orientation]);
+
+    // Try to initialize with new camera
+    const newStream = await initMedia(newFacing, orientation, false, videoEnabled);
+
+    if (newStream) {
+      // Success - update state and settings
+      setFacingMode(newFacing);
+      updateSetting('facingMode', newFacing);
+    } else {
+      // Failed - reinitialize with current camera
+      console.warn(`Camera ${newFacing} not available, keeping ${facingMode}`);
+      await initMedia(facingMode, orientation, false, videoEnabled);
+    }
+  }, [isRecording, videoEnabled, facingMode, initMedia, orientation, updateSetting]);
 
   // Toggle video mode
   const toggleVideoMode = useCallback(() => {
     if (isRecording) return;
     const newVideoEnabled = !videoEnabled;
     setVideoEnabled(newVideoEnabled);
+    updateSetting('videoEnabled', newVideoEnabled);
 
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
@@ -331,7 +352,28 @@ export function RecordingProvider({ children }) {
     if (newVideoEnabled) {
       initMedia(facingMode, orientation, true, true);
     }
-  }, [isRecording, videoEnabled, stream, initMedia, facingMode, orientation]);
+  }, [isRecording, videoEnabled, stream, initMedia, facingMode, orientation, updateSetting]);
+
+  // Set facing mode and save to settings
+  const setFacingModeWithSave = useCallback((newFacing) => {
+    setFacingMode(newFacing);
+    updateSetting('facingMode', newFacing);
+  }, [updateSetting]);
+
+  // Set video enabled and save to settings
+  const setVideoEnabledWithSave = useCallback((enabled) => {
+    setVideoEnabled(enabled);
+    updateSetting('videoEnabled', enabled);
+  }, [updateSetting]);
+
+  // Stop media stream (for cleanup when leaving record page)
+  const stopStream = useCallback(() => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      setIsInitialized(false);
+    }
+  }, [stream]);
 
   // Play recorded media
   const playRecordedMedia = useCallback(() => {
@@ -339,7 +381,7 @@ export function RecordingProvider({ children }) {
     setIsPlaying(true);
     playPlayingSound();
 
-    if (recordedMedia.isVideo && videoPlaybackRef.current) {
+    if (videoPlaybackRef.current) {
       videoPlaybackRef.current.src = recordedMedia.url;
       videoPlaybackRef.current.play();
     }
@@ -421,6 +463,9 @@ export function RecordingProvider({ children }) {
     discardRecording,
     switchCamera,
     toggleVideoMode,
+    setFacingModeWithSave,
+    setVideoEnabledWithSave,
+    stopStream,
     playRecordedMedia,
     stopPlayback,
 

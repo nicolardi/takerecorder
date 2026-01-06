@@ -6,6 +6,7 @@ import {
   connectToRecording,
   getMetronomeStream,
   resumeAudioContext,
+  updateMetronomeParams,
 } from '../utils/metronomeAudio';
 
 // Time signatures available
@@ -112,23 +113,13 @@ export function useMetronome() {
     }
   }, [isPlaying, start, stop]);
 
-  // Restart metronome with new settings (if playing)
-  const restartIfPlaying = useCallback(async () => {
-    if (isPlaying) {
-      stop();
-      // Small delay to ensure clean restart
-      setTimeout(() => start(), 50);
-    }
-  }, [isPlaying, stop, start]);
-
-  // Update BPM
+  // Update BPM - applies immediately
   const updateBpm = useCallback((newBpm) => {
     const clampedBpm = Math.max(MIN_BPM, Math.min(MAX_BPM, newBpm));
     setBpm(clampedBpm);
-    if (isPlaying) {
-      restartIfPlaying();
-    }
-  }, [isPlaying, restartIfPlaying]);
+    // Update running metronome immediately
+    updateMetronomeParams(clampedBpm, undefined, undefined, undefined);
+  }, []);
 
   // Increment/decrement BPM
   const incrementBpm = useCallback((amount = 1) => {
@@ -139,23 +130,27 @@ export function useMetronome() {
     updateBpm(bpm - amount);
   }, [bpm, updateBpm]);
 
-  // Update time signature
+  // Update time signature - applies immediately
   const updateTimeSignature = useCallback((newTimeSignature) => {
     setTimeSignature(newTimeSignature);
     setCurrentBeat(0);
-    if (isPlaying) {
-      restartIfPlaying();
-    }
-  }, [isPlaying, restartIfPlaying]);
-
-  // Update accent
-  const updateAccentFirstBeat = useCallback((accent) => {
-    setAccentFirstBeat(accent);
+    // Update running metronome immediately
+    updateMetronomeParams(undefined, newTimeSignature.beats, undefined, undefined);
   }, []);
 
-  // Update volume
+  // Update accent - applies immediately
+  const updateAccentFirstBeat = useCallback((accent) => {
+    setAccentFirstBeat(accent);
+    // Update running metronome immediately
+    updateMetronomeParams(undefined, undefined, accent, undefined);
+  }, []);
+
+  // Update volume - applies immediately
   const updateVolume = useCallback((newVolume) => {
-    setVolume(Math.max(0, Math.min(1, newVolume)));
+    const clampedVolume = Math.max(0, Math.min(1, newVolume));
+    setVolume(clampedVolume);
+    // Update running metronome immediately
+    updateMetronomeParams(undefined, undefined, undefined, clampedVolume);
   }, []);
 
   // Update visual effect
